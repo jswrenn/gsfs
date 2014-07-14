@@ -179,6 +179,7 @@ int gsfs_mknod(const char *path, mode_t mode, dev_t dev)
 	- if so, register the artist
  All other branches result in error.
 */
+// http://linux.die.net/man/2/mkdir
 int gsfs_mkdir(const char *path, mode_t mode)
 {
 	log_msg("\ngsfs_mkdir(path=\"%s\", mode=0%3o)\n",
@@ -187,13 +188,18 @@ int gsfs_mkdir(const char *path, mode_t mode)
 	GSFS_Path_Components 
 		path_components = gsfs_parse_path(path);
 	
-	if(path_components.level == ROOT)
+	if(path_components.level == ARTIST)
 	{
-		switch(gsfs_register_artist(path_components)){
+		GSFS_Query_FS_Result 
+			result = gsfs_query_fs(path_components.artist_name);
+			
+		if(result.error == SUCCESS)
+			return EEXIST;
+			
+		switch(gsfs_register_artist(path_components))
+		{
 		case SUCCESS:
-			return 0;
-		case ERROR_DUPLICATE:
-			return EOPNOTSUPP;
+			return SUCCESS;
 		case ERROR_ARTIST_NOT_FOUND:
 			return EOPNOTSUPP;
 		case ERROR_CONNECTION_LOST:
@@ -210,11 +216,12 @@ int gsfs_mkdir(const char *path, mode_t mode)
 /** Remove a file 
 	Removing a file from gsfs is not a supported operation.
 */
+// http://linux.die.net/man/2/unlink
 int gsfs_unlink(const char *path)
 {
     log_msg("gsfs_unlink(path=\"%s\")\n",
 	    path);	
-    return EOPNOTSUPP;
+    return EROFS;
 }
 
 /** Remove a directory 
@@ -815,6 +822,7 @@ int gsfs_access(const char *path, int mask)
  */
 int gsfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
+	//TODO
     int retstat = 0;
     char fpath[PATH_MAX];
     int fd;
@@ -848,17 +856,10 @@ int gsfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
  */
 int gsfs_ftruncate(const char *path, off_t offset, struct fuse_file_info *fi)
 {
-    int retstat = 0;
-    
     log_msg("\ngsfs_ftruncate(path=\"%s\", offset=%lld, fi=0x%08x)\n",
 	    path, offset, fi);
     log_fi(fi);
-    
-    retstat = ftruncate(fi->fh, offset);
-    if (retstat < 0)
-	retstat = gsfs_error("gsfs_ftruncate ftruncate");
-    
-    return retstat;
+    return EOPNOTSUPP;
 }
 
 /**
