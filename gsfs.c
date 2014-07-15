@@ -83,22 +83,52 @@ static void gsfs_fullpath(char fpath[PATH_MAX], const char *path)
  * ignored.  The 'st_ino' field is ignored except if the 'use_ino'
  * mount option is given.
  */
+ // http://man7.org/linux/man-pages/man2/stat.2.html
 int gsfs_getattr(const char *path, struct stat *statbuf)
 {
-    int retstat = 0;
-    char fpath[PATH_MAX];
-    
-    log_msg("\ngsfs_getattr(path=\"%s\", statbuf=0x%08x)\n",
-	  path, statbuf);
-    gsfs_fullpath(fpath, path);
-    
-    retstat = lstat(fpath, statbuf);
-    if (retstat != 0)
-	retstat = gsfs_error("gsfs_getattr lstat");
-    
-    log_stat(statbuf);
-    
-    return retstat;
+	log_msg("\ngsfs_getattr(path=\"%s\", statbuf=0x%08x)\n",
+		path, statbuf);
+	
+	memset(stbuf, 0, sizeof(struct stat));
+	
+	statbuf->st_dev = 0;
+	statbuf->st_size = 0;
+	statbuf->st_uid = getuid();
+	statbuf->st_gid = getgid();
+	statbuf->st_atime = /*fs start time */;
+	statbuf->st_mtime = time(NULL);
+	statbuf->st_ctime = time(NULL);
+	statbuf->st_nlink = 2;
+	
+	statbuf->st_mode =  0
+		| S_IRUSR  // owner has read permission
+		| S_IRGRP; // group has read permission
+	
+	GSFS_Path_Components 
+		path_components = gsfs_parse_path(path);	
+	
+	switch(path_components.level){
+	case ROOT:
+		statbuf->st_mode
+			&=S_IWUSR; // owner has write permission
+	case ARTIST:
+	case ALBUM:
+		statbuf->st_mode |= S_IFDIR; // path is a directory
+		break;
+	case SONG:
+		statbuf->st_mode |= S_IFREG; // path is a file
+	}
+	
+	if(path_components.level != ROOT)
+	{
+		GSFS_Query_FS_Results
+			results = gsfs_query_fs(path_components);
+			
+		if(results.error != 0)
+			return ENOENT;
+	}
+	else
+		return SUCCESS;
 }
 
 /** Read the target of a symbolic link
@@ -436,9 +466,11 @@ int gsfs_write(const char *path, const char *buf, size_t size, off_t offset,
  * Replaced 'struct statfs' parameter with 'struct statvfs' in
  * version 2.5
  */
- /* TODO: anything? Not sure what goes on here */
 int gsfs_statfs(const char *path, struct statvfs *statv)
 {
+	// Leave this as is. Since our file system currently runs in memory,
+	// the underlying filesystem statistics for our 'empty' music folder
+	// apply perfectly.
     int retstat = 0;
     char fpath[PATH_MAX];
     
