@@ -109,8 +109,7 @@ int gsfs_getattr(const char *path, struct stat *statbuf)
 	
 	switch(path_components.level){
 	case ROOT:
-		statbuf->st_mode
-			&=S_IWUSR; // owner has write permission
+		statbuf->st_mode |=S_IWUSR; // owner has write permission
 	case ARTIST:
 	case ALBUM:
 		statbuf->st_mode |= S_IFDIR; // path is a directory
@@ -191,29 +190,27 @@ int gsfs_mkdir(const char *path, mode_t mode)
 		
 	GSFS_Path_Components 
 		path_components = gsfs_parse_path(path);
-	
-	if(path_components.level == ARTIST)
-	{
-		GSFS_Query_FS_Result 
-			result = gsfs_query_fs(path_components.artist_name);
-			
-		if(result.error == SUCCESS)
-			return EEXIST;
-			
-		switch(gsfs_register_artist(path_components))
-		{
-		case SUCCESS:
-			return SUCCESS;
-		case ERROR_ARTIST_NOT_FOUND:
-			return EOPNOTSUPP;
-		case ERROR_CONNECTION_LOST:
-			return EOPNOTSUPP;
-		}
-	}
-	else
-	{
+		
+	if(path_components.level != ARTIST)
 		// artist and album folders are read-only
 		return EROFS;
+	
+	GSFS_Query_FS_Result 
+		result = gsfs_query_fs(path_components.artist_name);
+		
+	if(result.error == SUCCESS)
+		// do not allow duplicate artists to be created
+		return EEXIST;
+		
+	// attempt to register the artist
+	switch(gsfs_register_artist(path_components))
+	{
+	case SUCCESS:
+		return SUCCESS;
+	case ERROR_ARTIST_NOT_FOUND:
+		return EOPNOTSUPP;
+	case ERROR_CONNECTION_LOST:
+		return EOPNOTSUPP;
 	}
 }
 
@@ -388,55 +385,42 @@ int gsfs_read(const char *path, char *buf, size_t size, off_t offset, struct fus
 		
 	GSFS_Path_Components 
 		path_components = gsfs_parse_path(path);
-		
-	switch(path_components.level){
-	case ROOT:
-	case ARTIST:
-	case ALBUM: 
-		// Folders may not be read as files
+	
+	// if not a file, abort with error
+	if(path_components.level != SONG)
 		return EISDIR;
-	case SONG:
-		// Songs are files, may be read
-		// query for a song object using path components
-		GSFS_Filesystem_Song_Query_Result query_result;
 		
-		switch(gsfs_fs_query(&query_result,
-			path_components.artist_name,
-			path_components.album_name, 
-			path_components.song_name))
+	// Songs are files, may be read
+	// query for a song object using path components
+	GSFS_Query_FS_Result
+		result = gsfs_query_fs(path_components);
+	
+	if(result.error != SUCCESS)
+		// error: no such file or directory
+		return ENOENT;
+	
+	GSFS_Audio_Data *audio_data;
+	switch(gsfs_get_song_audio(query_result.song))
+	{
+	case ENOMEM:
+		// out of memory
+		return EOPNOTSUPP;
+	case ERROR_CONNECTION_LOST:
+		// connection lost
+		return EOPNOTSUPP;
+	case SUCCESS:
+		// copy audio-data to buffer
+		if(offset > audio->len)
 		{
-		case ERROR_ALBUM_NOT_FOUND:
-		case ERROR_ARTIST_NOT_FOUND:
-		case ERROR_ALBUM_NOT_FOUND:
-		case ERROR_SONG_NOT_FOUND:
-			// error: no such file or directory
-			return ENOENT;
-		case SUCCESS:
-			// song struct located in memory
-			GSFS_Audio_Data *audio_data;
-			switch(gsfs_get_song_audio(query_result.song))
-			{
-			case ENOMEM:
-				// out of memory
-				return EOPNOTSUPP;
-			case ERROR_CONNECTION_LOST:
-				// connection lost
-				return EOPNOTSUPP;
-			case SUCCESS:
-				// copy audio-data to buffer
-				if(offset > audio->len)
-				{
-					if(offset+size > audio->len)
-						size = audio->len - offset;			
-					memcpy(buf, audio->data + offset, size);
-				}
-				else
-				{
-					size = 0;
-				}
-				return size;
-			}
+			if(offset+size > audio->len)
+				size = audio->len - offset;			
+			memcpy(buf, audio->data + offset, size);
 		}
+		else
+		{
+			size = 0;
+		}
+		return size;
 	}
 }
 
