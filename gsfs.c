@@ -138,39 +138,13 @@ int gsfs_readlink(const char *path, char *link, size_t size)
  * There is no create() operation, mknod() will be called for
  * creation of all non-directory, non-symlink nodes.
  */
-// shouldn't that comment be "if" there is no.... ?
+// http://man7.org/linux/man-pages/man2/mknod.2.html
 int gsfs_mknod(const char *path, mode_t mode, dev_t dev)
 {
-    int retstat = 0;
-    char fpath[PATH_MAX];
-    
     log_msg("\ngsfs_mknod(path=\"%s\", mode=0%3o, dev=%lld)\n",
 	  path, mode, dev);
-    gsfs_fullpath(fpath, path);
-    
-    // On Linux this could just be 'mknod(path, mode, rdev)' but this
-    //  is more portable
-    if (S_ISREG(mode)) {
-        retstat = open(fpath, O_CREAT | O_EXCL | O_WRONLY, mode);
-	if (retstat < 0)
-	    retstat = gsfs_error("gsfs_mknod open");
-        else {
-            retstat = close(retstat);
-	    if (retstat < 0)
-		retstat = gsfs_error("gsfs_mknod close");
-	}
-    } else
-	if (S_ISFIFO(mode)) {
-	    retstat = mkfifo(fpath, mode);
-	    if (retstat < 0)
-		retstat = gsfs_error("gsfs_mknod mkfifo");
-	} else {
-	    retstat = mknod(fpath, mode, dev);
-	    if (retstat < 0)
-		retstat = gsfs_error("gsfs_mknod mknod");
-	}
-    
-    return retstat;
+	// error: read only filesystem
+	return EROFS;
 }
 
 /** Create a directory 
